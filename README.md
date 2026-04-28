@@ -64,13 +64,109 @@ For instance, to prepare MedleySolos data using Music2Latent official pretrained
 
 # Train
 
+(Optional, recommended when using continuous attributes.) Compute per-attribute min/max, quantization bins, and a NaN-free key list over the LMDB built above:
+
 ```bash
+(myenv)$ python scripts/compute_min_max_dataset.py --data_path /path/to/processed_m2l
+```
+
+This writes `metadata_attributes.json` (min/max per continuous attribute, value counts per discrete attribute), `bins_values.pkl` (quantization bins per continuous attribute), and `lmdb_keys.pkl` (LMDB keys with the NaN examples filtered out) inside the dataset folder.
+
+Pick or write a gin config in `platune/configs/`. The shipped `v1.gin` defines the discrete control set `["pitch", "octave", "onsets", "dynamics", "instrument"]` (no continuous controls) for a 32-channel codec like Music2Latent, with a 6-layer transformer denoiser and rotary positional embeddings. To control different attributes or change model size, edit `DISCRETE_KEYS`, `CONTINUOUS_KEYS`, `CLASSES_ATTR_DISCRETE`, `LATENT_DIM`, `SEQ_LENGTH`, etc.
+
+Launch training:
+
+```bash
+(myenv)$ python scripts/train.py \
+    -d /path/to/processed_m2l \
+    -n my_run \
+    -c v1 \
+    -s /path/to/runs \
+    --gpu 0 \
+    --max_steps 300000 \
+    --val_every 10000
+```
+
+Specifications:
+```bash
+Usage: train.py [OPTIONS]
+
+Options:
+  -d, --db_path TEXT             dataset path
+  -n, --name TEXT                Name of the run
+  -c, --config TEXT              Name of the gin configuration file to use
+  -s, --save_path TEXT           path to save models checkpoints
+  --max_steps INTEGER            Maximum number of training steps
+  --val_every INTEGER            Checkpoint model every n steps
+  --gpu INTEGER                  GPU to use (-1 for cpu)
+  --ckpt TEXT                    Path to previous checkpoint of the run
+  --build_cache                  Load dataset in cache memory for training
+  --lmdb_keys_filename TEXT      lmdb keys filename (e.g. lmdb_keys)
+  --bins_values_file TEXT        bins_values pkl file to quantize continuous attributes
+  --min_max_file TEXT            metadata json file (min/max for continuous attributes)
+  --help                         Show this message and exit.
+```
+
+When using continuous attributes, pass **either** `--bins_values_file bins_values.pkl` to treat them as quantized classes, **or** `--min_max_file metadata_attributes.json` to keep them continuous and only normalize them to `[-1, 1]` — the two options are mutually exclusive. `--lmdb_keys_filename lmdb_keys` skips the NaN examples filtered by the previous step. To resume from a previous run, point `--ckpt` at the run directory or directly at a `.ckpt` file.
+
+Checkpoints (`last.ckpt` and `best.ckpt`) and TensorBoard logs are written under `<save_path>/<name>/`. The exact gin configuration used is also saved next to them as `config.gin` for reproducibility.
+
+```bash
+(myenv)$ tensorboard --logdir /path/to/runs/my_run
 ```
 
 # Inference
 
-```bash
+A trained PLaTune model is paired with the same pretrained codec used at data preparation time. Load both with the `load_model` helper, then use `z_to_cs` to extract the disentangled `(c, s)` representation from a codec latent, and `cs_to_z` to map an edited `(c, s)` back to a codec latent that you can decode to audio.
+
+```python
+import torch, librosa, soundfile as sf
+from platune.helpers.model_loaders import load_model
+
+device = "cuda:0"
+
+# load PLaTune + the pretrained codec
+model, codec = load_model(
+    ckpt_path="/path/to/runs/my_run/best.ckpt",
+    config_path="/path/to/runs/my_run/config.gin",
+    emb_model_path="music2latent",         # or path to a torchscript codec
+    device=device,
+)
+
+# encode an audio file to the codec's latent space
+audio, _ = librosa.load("input.wav", sr=44100, mono=True)
+x = torch.from_numpy(audio).to(device).reshape(-1, 131072)        # (B, num_signal)
+z = codec.encode(x)                                                # (B, latent_dim, T)
+
+# extract control + style: c is the first `control_dim` channels, s the rest
+cs = model.z_to_cs(z, nb_steps=model.nb_steps)
+c, s = cs[:, :model.control_dim], cs[:, model.control_dim:]
+
+# --- example edit: transpose the melody up by one octave ---
+# c is normalized to [-1, 1] per channel. To set an absolute attribute value,
+# build it in raw class/value space and run model.normalize_attr(...).
+# Here we just shift the "octave" channel (index 1 in v1.gin's DISCRETE_KEYS).
+c_edit = c.clone()
+c_edit[:, 1] = c[:, 1] + 0.2
+
+# resynthesize the latent and decode to audio
+cs_edit = torch.cat([c_edit, s], dim=1)
+z_edit = model.cs_to_z(cs_edit, nb_steps=model.nb_steps)
+audio_out = codec.decode(z_edit).cpu().numpy().reshape(-1)
+sf.write("edited.wav", audio_out, 44100)
 ```
+
+To synthesize directly from attributes (no input audio), build a tensor `a` of shape `(B, control_dim, T)` whose channels follow the order `discrete_keys + continuous_keys` (raw class indices for discrete keys, raw values for continuous keys), then sample `(c, s)` from the prior:
+
+```python
+c = model.normalize_attr(a.to(device))                             # → [-1, 1]
+c_dist, s_dist = model.get_cs_distributions(c, warmup=False, zero_var=True)
+cs = model.get_cs_samples(c_dist, s_dist)
+z = model.cs_to_z(cs, nb_steps=model.nb_steps)
+audio_out = codec.decode(z).cpu().numpy().reshape(-1)
+```
+
+Use `zero_var=True` for deterministic conditioning on the attribute values, or `zero_var=False` (default) to draw `c` from the per-attribute Gaussian learned during training.
 
 ---
 ---
