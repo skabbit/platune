@@ -124,9 +124,11 @@ def main(
     # device = "cuda:" + str(gpu) if torch.cuda.is_available() and gpu >= 0 else "cpu"
     # if device.startswith("cuda"):
     #     accelerator = "cuda"
-    accelerator =  "cuda" if torch.cuda.is_available() and gpu >= 0 else None
+    accelerator = "cuda" if torch.cuda.is_available() and gpu >= 0 else "cpu"
     if accelerator == "cuda":
         device = gpu
+    else:
+        device = 1
     print(f'device - selected gpu: {accelerator}:{device}')
 
 

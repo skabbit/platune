@@ -50,6 +50,13 @@ def simple_parser(audio_folder, filters=None):
     return audios, metadatas
 
 
+def solo_parser(audio_folder, filters=None):
+    audios, metadatas = simple_parser(audio_folder, filters=filters)
+    for m in metadatas:
+        m["instrument"] = "solo"
+    return audios, metadatas
+
+
 def maestro_parser(main_folder, filters=None):
 
     # audios = os.listdir(os.path.join(main_folder, "audio"))
@@ -243,6 +250,8 @@ def get_parser(parser_name):
         parser = medley_solos_mono_parser
     elif parser_name == "maestro_parser":
         parser = maestro_parser
+    elif parser_name == "solo_parser":
+        parser = solo_parser
     else:
         raise NotImplementedError(f'No parser method named : {parser_name}.')
     return parser

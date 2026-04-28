@@ -1,0 +1,78 @@
+from __gin__ import dynamic_registration
+
+from platune.datasets import dataset
+from platune.networks import transformerv2
+from platune import model
+
+
+# Smoke-test config tailored for music2latent (64-ch latents) and tiny datasets.
+# Differences vs v1.gin:
+#   - LATENT_DIM = 64 (music2latent.encode() returns 64-channel latents)
+#   - SEQ_LENGTH = 32 (num_signal=131072 / hop=4096 = 32 frames)
+#   - smaller transformer (n_layers=2, embed_dim=128) to keep CPU steps quick
+
+
+# HPARAMS
+
+BATCH = 8
+N_WORKERS = 0
+
+LATENT_DIM = 64
+
+SEQ_LENGTH = 32
+
+DISCRETE_KEYS = ["pitch", "octave", "onsets", "dynamics", "instrument"]
+CLASSES_ATTR_DISCRETE = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [-1, 1, 2, 3, 4, 5, 6, 7, 8], [0, 1], [0, 1, 2, 3, 4, 5, 6, 7, 8], [0, 1, 2, 3, 4, 5]]
+
+CONTINUOUS_KEYS = []
+
+SIGMA_INIT = 0.4
+SIGMA_DECAY = 0.995
+R = 0.25
+
+SIGMA_TARGET_CONTINUOUS = 0.3
+
+LEARNING_RATE = 1e-4
+USE_GRAD_CLIP = True
+
+NB_STEPS = 10
+
+
+# DATA_LOADER
+dataset.load_data:
+    discrete_keys = %DISCRETE_KEYS
+    continuous_keys = %CONTINUOUS_KEYS
+    batch_size = %BATCH
+    n_workers = %N_WORKERS
+
+
+# NETWORKS
+transformerv2.Denoiser:
+    n_channels = %LATENT_DIM
+    seq_len = %SEQ_LENGTH
+    embed_dim = 128
+    noise_embed_dims = 64
+    n_layers = 2
+    mlp_multiplier = 2
+    dropout = 0.1
+    causal = False
+    pos_emb_type = "rotary"
+    max_cache_size = 0
+    min_chunk_size = 1
+
+
+# MODEL
+model.PLaTune:
+    flow = @transformerv2.Denoiser
+    latent_dim = %LATENT_DIM
+    discrete_keys = %DISCRETE_KEYS
+    continuous_keys = %CONTINUOUS_KEYS
+    classes_attr_discrete = %CLASSES_ATTR_DISCRETE
+    sigma_init = %SIGMA_INIT
+    r = %R
+    sigma_decay = %SIGMA_DECAY
+    sigma_target_continuous = %SIGMA_TARGET_CONTINUOUS
+    lr = %LEARNING_RATE
+    use_grad_clip = %USE_GRAD_CLIP
+    n_ex_val = 1
+    nb_steps = %NB_STEPS

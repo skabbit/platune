@@ -17,7 +17,11 @@ from platune.datasets.audio_example import AudioExample
 
 from platune.datasets.transforms import BasicPitchPytorch
 from platune.datasets.audio_descriptors import compute_all
-from platune.datasets.process_attributes import process_midi_attributes, process_midi_attributesv2, get_midi_notes
+from platune.datasets.process_attributes import process_midi_attributes, get_midi_notes
+try:
+    from platune.datasets.process_attributes import process_midi_attributesv2
+except ImportError:
+    process_midi_attributesv2 = None
 
 
 torch.set_grad_enabled(False)
@@ -287,11 +291,11 @@ def main(
                     # compute audio descriptors
                     feat = compute_all(audio_array) if len(descriptors_list) > 0 else None
 
-                    if 'integrated_loudness' in feat and np.any(feat['integrated_loudness'] == float("-inf")):
+                    if feat is not None and 'integrated_loudness' in feat and np.any(feat['integrated_loudness'] == float("-inf")):
                         skip_examples_inf_loud += 1
                         continue
 
-                    if 'loudness1s' in feat and np.any(feat['loudness1s'] == float("-inf")):
+                    if feat is not None and 'loudness1s' in feat and np.any(feat['loudness1s'] == float("-inf")):
                         skip_examples_inf_loud += 1
                         continue
                     
@@ -323,6 +327,10 @@ def main(
                             if version == 'v1':
                                 attr_midi = process_midi_attributes(x=midi, instrument_val=cur_metadata["instrument"])
                             elif version == 'v2':
+                                if process_midi_attributesv2 is None:
+                                    raise NotImplementedError(
+                                        "process_midi_attributesv2 is not defined in platune.datasets.process_attributes"
+                                    )
                                 pitch, onset, offset, _ = get_midi_notes(midi)
                                 attr_midi = process_midi_attributesv2(pitch, onset, offset, instrument_val=cur_metadata["instrument"])
 
