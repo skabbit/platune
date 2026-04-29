@@ -10,7 +10,7 @@ from platune import model
 BATCH = 32
 N_WORKERS = 0
 
-LATENT_DIM = 32
+LATENT_DIM = 64  # music2latent.encode() returns 64-channel latents
 
 SEQ_LENGTH = 64
 
