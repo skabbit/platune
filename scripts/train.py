@@ -119,17 +119,14 @@ def main(
             nepoch = val_every // len(train)
             val_check["check_val_every_n_epoch"] = nepoch
 
-    # select GPU
-    # accelerator = None
-    # device = "cuda:" + str(gpu) if torch.cuda.is_available() and gpu >= 0 else "cpu"
-    # if device.startswith("cuda"):
-    #     accelerator = "cuda"
-    accelerator = "cuda" if torch.cuda.is_available() and gpu >= 0 else "cpu"
-    if accelerator == "cuda":
-        device = gpu
+    # select accelerator: cuda > mps > cpu. --gpu -1 forces cpu.
+    if torch.cuda.is_available() and gpu >= 0:
+        accelerator, device = "cuda", gpu
+    elif torch.backends.mps.is_available() and gpu >= 0:
+        accelerator, device = "mps", 1
     else:
-        device = 1
-    print(f'device - selected gpu: {accelerator}:{device}')
+        accelerator, device = "cpu", 1
+    print(f'device - selected accelerator: {accelerator}:{device}')
 
 
     # instantiate trainer

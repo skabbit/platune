@@ -108,8 +108,13 @@ def main(
     # cast args to python type
     descriptors_list = list(descriptors_list)
 
-    # load pretrained codec
-    device = "cuda:" + str(gpu) if torch.cuda.is_available() and gpu >= 0 else "cpu"
+    # select device: cuda > mps > cpu. --gpu -1 forces cpu.
+    if torch.cuda.is_available() and gpu >= 0:
+        device = f"cuda:{gpu}"
+    elif torch.backends.mps.is_available() and gpu >= 0:
+        device = "mps"
+    else:
+        device = "cpu"
 
     # logging
     print("-"*60)
