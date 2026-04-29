@@ -287,11 +287,11 @@ def main(
                     # compute audio descriptors
                     feat = compute_all(audio_array) if len(descriptors_list) > 0 else None
 
-                    if 'integrated_loudness' in feat and np.any(feat['integrated_loudness'] == float("-inf")):
+                    if feat is not None and 'integrated_loudness' in feat and np.any(feat['integrated_loudness'] == float("-inf")):
                         skip_examples_inf_loud += 1
                         continue
 
-                    if 'loudness1s' in feat and np.any(feat['loudness1s'] == float("-inf")):
+                    if feat is not None and 'loudness1s' in feat and np.any(feat['loudness1s'] == float("-inf")):
                         skip_examples_inf_loud += 1
                         continue
                     
